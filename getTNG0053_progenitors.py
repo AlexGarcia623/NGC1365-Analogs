@@ -9,8 +9,10 @@ import matplotlib.pyplot as plt
 import illustris_python as il
 import scipy.integrate as integrate
 
+from matplotlib.colors import LogNorm
+
 # set RC params
-mpl.rcParams['figure.facecolor'] = 'black'
+mpl.rcParams['figure.facecolor'] = 'white'
 mpl.rcParams['axes.facecolor']='white'
 mpl.rcParams['font.size'] = 20
 mpl.rcParams['axes.linewidth'] = 1.5
@@ -29,9 +31,9 @@ mpl.rcParams['ytick.minor.size'] = 3.5
 mpl.rcParams['xtick.top'] = True
 mpl.rcParams['ytick.right'] = True
 
-os.environ['MANPATH']="/home/paul.torrey/local/texlive/2018/texmf-dist/doc/man:$MANPATH"
-os.environ['INFOPATH']="/home/paul.torrey/local/texlive/2018/texmf-dist/doc/info:$INFOPATH"
-os.environ['PATH']="/home/paul.torrey/local/texlive/2018/bin/x86_64-linux:/home/paul.torrey/local/texlive/2018/texmf-dist:$PATH"
+# os.environ['MANPATH']="/home/paul.torrey/local/texlive/2018/texmf-dist/doc/man:$MANPATH"
+# os.environ['INFOPATH']="/home/paul.torrey/local/texlive/2018/texmf-dist/doc/info:$INFOPATH"
+# os.environ['PATH']="/home/paul.torrey/local/texlive/2018/bin/x86_64-linux:/home/paul.torrey/local/texlive/2018/texmf-dist:$PATH"
 
 mpl.rcParams['text.usetex']        = True
 mpl.rcParams['font.family']        = 'serif'
@@ -42,35 +44,70 @@ path = '/orange/paul.torrey/IllustrisTNG/Runs/'
 
 run  = 'L35n2160TNG'
 
+__tree_thing__ = '/orange/paul.torrey/IllustrisTNG/Runs/L35n2160TNG/postprocessing/trees/LHaloTree/trees_sf1_099.0.hdf5'
+
 base_dir  = path + '/' + run
+base_path = path + '/' + run
 post_dir  = path + '/' + run + '/postprocessing'
 tree_dir  = post_dir + '/trees/SubLink/'
+
+snap = 99
 
 subs  = [526029, 526478, 537236]
 names = ['TNG0052','TNG0053','TNG0070']
 
 which_sub = 1
 
-SUBHALO_ID = subs[which_sub] 
-print names[which_sub]
-snap       = 99
+# h5file = h5py.File( names[which_sub] + '.hdf5', 'w' )
 
-h5file = h5py.File( names[which_sub] + '.hdf5', 'w' )
-snapshot = h5file.create_group( 'snap_%' %snap )
-maps     = snapshot.create_group( 'map' )
-profiles = snapshot.create_group( 'profile' )
-redshift = snapshot.create_group( 'snap' ) 
+SUBHALO_ID   = subs[which_sub]
 
-SF_GAS_FLAG = False
+MAJOR_MERGER_FRAC = 1.0/100.0
+MERGER_MASS_TYPE  = 4 # 0 -> Gas, 1 -> DM, 4 -> Stars
 
-h      = 6.774E-01
-xh     = 7.600E-01
-zo     = 3.500E-01
-mh     = 1.6726219E-24
-kb     = 1.3806485E-16
-mc     = 1.270E-02
+file_num     = 0 
+file_index   = None
+file_located = False
 
-def maps_profiles(SUBHALO_ID,SF_GAS_FLAG=True):
+RAW_SUBHALO_ID = SUBHALO_ID + int(snap * 1.00E+12)
+while not file_located:    
+    tree_file = h5py.File( tree_dir + 'tree_extended.%s.hdf5' %file_num, 'r' )
+    
+    subID = np.array(tree_file.get('SubhaloIDRaw'))
+    
+    overlap = RAW_SUBHALO_ID in subID
+    
+    if (overlap):
+        file_located = True
+        file_index   = np.where( subID == RAW_SUBHALO_ID )[0][0]
+    else:
+        file_num += 1
+
+
+h  = 6.774E-01
+xh = 7.600E-01
+zo = 3.500E-01
+mh = 1.6725219E-24
+kb = 1.3086485E-16
+mc = 1.270E-02
+
+with h5py.File(__tree_thing__,'r') as f:
+    for i in f:
+        tree1 = f.get(i)
+        redshifts = np.array(tree1.get('Redshifts'))
+        break
+        
+snap_to_z = { snap: redshifts[i] for i, snap in enumerate(range(0,100)) }
+z_to_snap = { round(redshifts[i],2): snap for i, snap in enumerate(range(0,100)) }
+
+def maps_profiles(sub,snap,stellar_mass,SF_GAS_FLAG=True,main_prog=True):
+    # snapshot = h5file.create_group( 'snap_%s' %snap )
+    # maps     = snapshot.create_group( 'map' )
+    # profiles = snapshot.create_group( 'profile' )
+    # redshift = snapshot.create_group( 'snap' ) 
+    
+    print(snap)
+    
     xwdth    = 1.000E+02
     pixl     = 2.500E-01
 #     pixl     = 1.00E-01
@@ -93,9 +130,7 @@ def maps_profiles(SUBHALO_ID,SF_GAS_FLAG=True):
     map_sfrs   = np.full((pix, pix), np.nan, dtype = float)
     map_os     = np.full((pix, pix), np.nan, dtype = float)
     map_hs     = np.full((pix, pix), np.nan, dtype = float)
-    
-    sub = SUBHALO_ID
-    
+        
     hdr = il.groupcat.loadHeader(base_dir,snap)
     boxsize = hdr['BoxSize']
     scf     = hdr['Time']
@@ -112,8 +147,9 @@ def maps_profiles(SUBHALO_ID,SF_GAS_FLAG=True):
     subpos   = sub_cat['SubhaloPos'][sub]
     subvel   = sub_cat['SubhaloVel'][sub]
     
-    gasid    = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['ParticleIDs'      ])
+    #gasid    = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['ParticleIDs'      ])
     gaspos   = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['Coordinates'      ])
+    print(base_dir, snap, sub)
     gasvel   = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['Velocities'       ])
     gasmass  = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['Masses'           ])
     gassfr   = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['StarFormationRate'])
@@ -121,10 +157,10 @@ def maps_profiles(SUBHALO_ID,SF_GAS_FLAG=True):
     gasrho   = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['Density'          ])
     gasxe    = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['ElectronAbundance'])
     gasu     = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['InternalEnergy'   ])
-    starid   = il.snapshot.loadSubhalo(base_dir, snap, sub, 4, fields = ['ParticleIDs'      ])
+    #starid   = il.snapshot.loadSubhalo(base_dir, snap, sub, 4, fields = ['ParticleIDs'      ])
     starpos  = il.snapshot.loadSubhalo(base_dir, snap, sub, 4, fields = ['Coordinates'      ])
     starmass = il.snapshot.loadSubhalo(base_dir, snap, sub, 4, fields = ['Masses'           ])
-    bhid     = il.snapshot.loadSubhalo(base_dir, snap, sub, 5, fields = ['ParticleIDs'      ])
+    #bhid     = il.snapshot.loadSubhalo(base_dir, snap, sub, 5, fields = ['ParticleIDs'      ])
     ZO       = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['GFM_Metals'       ])[:,4]
     XH       = il.snapshot.loadSubhalo(base_dir, snap, sub, 0, fields = ['GFM_Metals'       ])[:,0]
     
@@ -136,7 +172,7 @@ def maps_profiles(SUBHALO_ID,SF_GAS_FLAG=True):
     gasvel  *= np.sqrt(scf)
     gasvel  -= subvel
     gasmass *= (1.000E+10 / h)
-    starmass *= (1.000E+10 / h)
+    starmass*= (1.000E+10 / h)
     gasrho0  = gasrho / (scf)**3.00E+00
     gasrho  *= (1.000E+10 / h) / (scf / h )**3.00E+00
     gasrho  *= (1.989E+33) / (3.086E+21**3.00E+00)
@@ -197,10 +233,19 @@ def maps_profiles(SUBHALO_ID,SF_GAS_FLAG=True):
     
     # gasvel = np.sqrt( gasvel[:,0]**2 + gasvel[:,1]**2 + gasvel[:,2]**2 )
     
+    vel_copy = gasvel.copy()
+    
     gasvel = (gaspos[:,0] * gasvel[:,0] + gaspos[:,1] * gasvel[:,1]) / np.sqrt(gaspos[:,0]**2 + gaspos[:,1]**2)
     
+    theta  = np.arctan2(vel_copy[:,1],vel_copy[:,0])
+    
+    vxgas  = vel_copy[:,0]
+    vygas  = vel_copy[:,1]
+    
     print('Calc Pixels\n')
-    xymgas, xymstar, xysfr, xyo, xyh, xyprad = calcpix(gaspos, starpos, gasmass, starmass,  gasrho, gassfr, gaszm, gasvel, zm9 = False)
+    xymgas, xymstar, xysfr, xyo, xyh, xyprad, xyvgas, pxgas, pygas = calcpix(
+        gaspos, starpos, gasmass, starmass, gasrho, gassfr, gaszm, gasvel, vxgas, vygas, zm9 = False
+    )
     
     xymgas  = np.reshape(xymgas , (pix, pix))
     xymstar = np.reshape(xymstar, (pix, pix))
@@ -208,64 +253,68 @@ def maps_profiles(SUBHALO_ID,SF_GAS_FLAG=True):
     xyo     = np.reshape(xyo    , (pix, pix))
     xyh     = np.reshape(xyh    , (pix, pix))
     xyprad  = np.reshape(xyprad , (pix, pix))
+    xyvgas  = np.reshape(xyvgas , (pix, pix))
+    pxgas   = np.reshape(pxgas  , (pix, pix))
+    pygas   = np.reshape(pygas  , (pix, pix))
     
-    xyvgas  = xyprad / xymgas
+    xyvgasrad  = xyprad / xymgas
+    
+    vxgas      = pxgas / xymgas
+    vygas      = pygas / xymgas
+    
+    fig = plt.figure(figsize=(8,8))
     
     print('Saving Maps\n')
-    h5xcs     = maps.create_dataset('x_map'       , dtype = float, data = xcs    )
-    h5ycs     = maps.create_dataset('y_map'       , dtype = float, data = ycs    )
-    h5xymgas  = maps.create_dataset('map_sig_gas' , dtype = float, data = xymgas )
-    h5xymstar = maps.create_dataset('map_sig_star', dtype = float, data = xymstar)
-    h5xysfr   = maps.create_dataset('map_sig_sfr' , dtype = float, data = xysfr  )
-    h5xyo     = maps.create_dataset('map_sig_O'   , dtype = float, data = xyo    )
-    h5xyh     = maps.create_dataset('map_sig_H'   , dtype = float, data = xyh    )
-    h5xyvgas  = maps.create_dataset('map_vgas'    , dtype = float, data = xyvgas )
     
+    spacing = 10
+    extent_max = int( 400 / spacing )
+    mappable = plt.imshow(np.log10(xymgas),cmap=plt.cm.binary, origin='lower',
+                          extent=[0,extent_max,0,extent_max])
     
-#     gasrad  = np.sqrt( gaspos[:,0]**2 + gaspos[:,1]**2 + gaspos[:,2]**2 )
-#     starrad = np.sqrt(starpos[:,0]**2 +starpos[:,1]**2 +starpos[:,2]**2 )
+    xspaced = vxgas[::spacing,::spacing]
+    yspaced = vygas[::spacing,::spacing]
     
-#     gasrad  = np.sqrt( gaspos[:,0]**2 + gaspos[:,1]**2 )
-#     starrad = np.sqrt(starpos[:,0]**2 +starpos[:,1]**2 )
+    xspaced = np.log10( np.abs(xspaced) ) * np.sign(xspaced)
+    yspaced = np.log10( np.abs(yspaced) ) * np.sign(yspaced)
     
-#     dr = 0.5
-#     print np.max(gasrad)
-#     rs = np.arange( 0.0, 30.0, dr )
+    xlbl   = plt.gca().get_xticklabels()
+    labels = np.linspace(-40,40,len(xlbl))
+    plt.gca().set_xticklabels(labels)
+    plt.gca().set_yticklabels(labels)
     
-#     OH = ZO/XH * 1.00/16.00
+    plt.xlabel(r'${\rm x~(kpc)}$')
+    plt.ylabel(r'${\rm y~(kpc)}$')
     
-#     pf_oh       = np.ones( len(rs) ) * np.nan
-#     pf_sig_gas  = np.ones( len(rs) ) * np.nan
-#     pf_sig_star = np.ones( len(rs) ) * np.nan
-#     pf_sig_sfr  = np.ones( len(rs) ) * np.nan
+    OH = np.log10(xyo[::spacing,::spacing]/xyh[::spacing,::spacing] * (1.000E+00 / 1.600E+01))+12
     
-#     print('Creating profiles \n')
-#     for index, current_r in enumerate(rs):
-#         gasmask  = ((gasrad  > current_r) & (gasrad  < current_r + dr ))
-#         starmask = ((starrad > current_r) & (starrad < current_r + dr ))
+    plt.text( 0.025,0.95, r'$z=%s$' %round(snap_to_z[snap],2), transform=plt.gca().transAxes )
     
-#         annulus_area = np.pi * ( (current_r+dr)**2 - (current_r)**2 )
-#         if round(current_r,1) % 5.0 == 0:
-#             print current_r, annulus_area
+    q=plt.quiver( np.arange(0,extent_max), np.arange(0, extent_max),
+                xspaced, yspaced, OH,
+                cmap=plt.cm.inferno, units="xy", scale=2 )
+    ax  = plt.gca()
+    cax = fig.add_axes([ax.get_position().x1+0.01,ax.get_position().y0,0.02,ax.get_position().height])
+    plt.colorbar( q, label=r"$\log ({\rm O/H}) + 12 ~{\rm (dex)}$", cax=cax )
     
-#         if (sum(gasmask) > 10):
-#             pf_oh      [index] = np.log10( np.median( OH[gasmask] ) ) + 12
-#             pf_sig_gas [index] = np.sum( gasmass[gasmask] )   / annulus_area
-#             pf_sig_sfr [index] = np.median( gassfr[gasmask] ) / annulus_area
-#         if (sum(starmask) > 10):
-#             pf_sig_star[index] = np.sum( starmass[starmask] ) / annulus_area
-            
-#     print('Saving Profiles\n')
-#     h5pfgas  = profiles.create_dataset('prf_sig_gas' , dtype = float,  data = np.log10(pf_sig_gas ))
-#     h5pfstar = profiles.create_dataset('prf_sig_star', dtype = float,  data = np.log10(pf_sig_star))
-#     h5pfsfr  = profiles.create_dataset('prf_sig_sfr' , dtype = float,  data = pf_sig_sfr )
-#     h5pfoh   = profiles.create_dataset('prf_oh'      , dtype = float,  data = pf_oh      )
+    if not main_prog:
+        plt.text( 0.025,0.9 , r'${\rm Merger~ Partner}$', transform=plt.gca().transAxes )
     
-    print('Saving redshift')
-    h5snap = redshift.create_dataset( 'redshift', dtype = float, data = z0 )
+    if main_prog:
+        plt.savefig( '%s_main' %snap + '.pdf', bbox_inches='tight' )
+    else:
+        plt.savefig( '%s_partner_%s' %(snap,stellar_mass) + '.pdf', bbox_inches='tight' )
+    
+    # h5xcs     = maps.create_dataset('x_map'       , dtype = float, data = xcs    )
+    # h5ycs     = maps.create_dataset('y_map'       , dtype = float, data = ycs    )
+    # h5xymgas  = maps.create_dataset('map_sig_gas' , dtype = float, data = xymgas )
+    # h5xymstar = maps.create_dataset('map_sig_star', dtype = float, data = xymstar)
+    # h5xysfr   = maps.create_dataset('map_sig_sfr' , dtype = float, data = xysfr  )
+    # h5xyo     = maps.create_dataset('map_sig_O'   , dtype = float, data = xyo    )
+    # h5xyh     = maps.create_dataset('map_sig_H'   , dtype = float, data = xyh    )
+    # h5xyvgas  = maps.create_dataset('map_vgas'    , dtype = float, data = xyvgas )
 
     
-def calcpix(gaspos, starpos, mgas, mstar, hrho, sfr, zm, vgas, zm9 = True):
+def calcpix(gaspos, starpos, mgas, mstar, hrho, sfr, zm, vgas, vxgas, vygas, zm9 = True):
     rmax   = +5.000E+01
     pixl   = +2.500E-01
 #     pixl   = 1.000E-01
@@ -283,6 +332,9 @@ def calcpix(gaspos, starpos, mgas, mstar, hrho, sfr, zm, vgas, zm9 = True):
     xymgas , x, y = np.histogram2d( gaspos[:,0],  gaspos[:,1], weights =        mgas, bins = [pixlims, pixlims])
     xysfr  , x, y = np.histogram2d( gaspos[:,0],  gaspos[:,1], weights =         sfr, bins = [pixlims, pixlims])
     xyprad , x, y = np.histogram2d( gaspos[:,0],  gaspos[:,1], weights =   vgas*mgas, bins = [pixlims, pixlims])
+    xyvgas , x, y = np.histogram2d( gaspos[:,0],  gaspos[:,1], weights =        vgas, bins = [pixlims, pixlims])
+    pxgas  , x, y = np.histogram2d( gaspos[:,0],  gaspos[:,1], weights =  vxgas*mgas, bins = [pixlims, pixlims])
+    pygas  , x, y = np.histogram2d( gaspos[:,0],  gaspos[:,1], weights =  vygas*mgas, bins = [pixlims, pixlims])
     if (zm9):
         xyo, x, y = np.histogram2d(gaspos[hidx,0], gaspos[hidx,1], weights = np.multiply(mgas[hidx], zm[hidx,4]), bins = [pixlims, pixlims])
         xyh, x, y = np.histogram2d(gaspos[hidx,0], gaspos[hidx,1], weights = np.multiply(mgas[hidx], zm[hidx,0]), bins = [pixlims, pixlims])
@@ -299,12 +351,19 @@ def calcpix(gaspos, starpos, mgas, mstar, hrho, sfr, zm, vgas, zm9 = True):
     xyo     = np.transpose(    xyo)
     xyh     = np.transpose(    xyh)
     xyprad  = np.transpose( xyprad)
+    xyvgas  = np.transpose( xyvgas)
+    pxgas   = np.transpose(  pxgas)
+    pygas   = np.transpose(  pygas)
+    
     xymstar =     np.ravel(xymstar)
     xymgas  =     np.ravel( xymgas)
     xysfr   =     np.ravel(  xysfr)
     xyo     =     np.ravel(    xyo)
     xyh     =     np.ravel(    xyh)
     xyprad  =     np.ravel( xyprad)
+    xyvgas  =     np.ravel( xyvgas)
+    pxgas   =     np.ravel(  pxgas)
+    pygas   =     np.ravel(  pygas)
     
     xymgas  /= pixa
     xymstar /= pixa
@@ -312,8 +371,11 @@ def calcpix(gaspos, starpos, mgas, mstar, hrho, sfr, zm, vgas, zm9 = True):
     xyo     /= pixa
     xyh     /= pixa
     xyprad  /= pixa
+    xyvgas  /= pixa
+    pxgas   /= pixa
+    pygas   /= pixa
     
-    return xymgas, xymstar, xysfr, xyo, xyh, xyprad
+    return xymgas, xymstar, xysfr, xyo, xyh, xyprad, xyvgas, pxgas, pygas
     
 def center(pos0, centpos, boxsize = None):
     pos       = np.copy(pos0)
@@ -410,5 +472,46 @@ def trans(arr0, incl0):
     del incl
     return arr
 
-maps_profiles(SF_GAS_FLAG)
-h5file.close()
+def main():
+    rootID  = tree_file["SubhaloID"][file_index]
+    fp      = tree_file["FirstProgenitorID"][file_index]
+    snapNum = tree_file["SnapNum"][file_index]
+    mass    = np.log10( tree_file["SubhaloMassType"][file_index,MERGER_MASS_TYPE] * 1.00E+10 / h )
+    subfind = tree_file["SubfindID"][file_index]
+    subhalo = tree_file["SubhaloID"][file_index]
+
+    desired_snaps = [99,59,67,50,33,25,21,17,13]
+    
+    print( 'Subfind ID: %s' %subfind )
+    print( 'Subhalo ID: %s' %subhalo )
+    
+    maps_profiles(subfind,snapNum,stellar_mass=mass,SF_GAS_FLAG=True,main_prog=True)
+
+    # return
+    while fp != -1:
+        fpIndex = file_index + (fp - rootID)
+        mass    = np.log10( tree_file["SubhaloMassType"][fpIndex,MERGER_MASS_TYPE] * 1.00E+10 / h )
+        fpSnap  = tree_file["SnapNum"][fpIndex]
+        subfind = tree_file["SubfindID"][fpIndex]
+            
+        if fpSnap in desired_snaps:
+            maps_profiles(subfind,fpSnap,stellar_mass=mass,SF_GAS_FLAG=True,main_prog=True)
+
+        nextProgenitor = tree_file["NextProgenitorID"][fpIndex]
+        while nextProgenitor != -1:
+            npIndex = file_index + (nextProgenitor - rootID)
+            npMass  = np.log10( tree_file["SubhaloMassType"][npIndex,MERGER_MASS_TYPE] * 1.00E+10 / h )
+            npSnap  = tree_file["SnapNum"][npIndex]
+            npSubfind = tree_file["SubfindID"][npIndex]
+
+            npHaloID = tree_file["SubhaloID"][npIndex]
+
+#             if ((10**npMass / 10**mass) > MAJOR_MERGER_FRAC) and (npMass > 0):
+
+#                 maps_profiles(npSubfind,npSnap,stellar_mass=npMass,SF_GAS_FLAG=True,main_prog=False)
+
+            nextProgenitor = tree_file["NextProgenitorID"][npIndex]
+
+        fp = tree_file["FirstProgenitorID"][fpIndex]
+        
+main()

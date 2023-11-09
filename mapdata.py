@@ -315,7 +315,9 @@ for i in range(len(subs)):
     
     radvel   = (gaspos[:,0] * gasvel[:,0] + gaspos[:,1] * gasvel[:,1]) / np.sqrt(gaspos[:,0]**2 + gaspos[:,1]**2)
     
-    xymgas, xymstar, xysfr, xyo, xyh, xyprad = calcpix(gaspos, starpos, gasmass, starmass,  gasrho, radvel, gassfr, gaszm, zm9 = False)
+    xymgas, xymstar, xysfr, xyo, xyh, xyprad = calcpix(
+        gaspos, starpos, gasmass, starmass,  gasrho, radvel, gassfr, gaszm, zm9 = False
+    )
     
     map_mgass[ :,:] = np.reshape(xymgas , (pix, pix))
     map_mstars[:,:] = np.reshape(xymstar, (pix, pix))
